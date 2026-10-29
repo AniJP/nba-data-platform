@@ -116,7 +116,7 @@ with tab_player:
         cols = st.columns(5)
         for col, (label, key) in zip(cols, [("PPG", "points_per_game"), ("RPG", "rebounds_per_game"),
                                             ("APG", "assists_per_game"), ("TS%", "true_shooting_pct"),
-                                            ("Game Score", "avg_game_score")]):
+                                            ("Game Score", "avg_game_score")], strict=True):
             col.metric(label, avg[key])
 
         form = q(
@@ -194,7 +194,7 @@ with tab_wp:
                    "Points on the diagonal mean perfect calibration.")
         briers = cal.groupby("model")["model_brier_score"].first()
         cols = st.columns(len(briers))
-        for col, (model, score) in zip(cols, briers.items()):
+        for col, (model, score) in zip(cols, briers.items(), strict=True):
             col.metric(f"Brier score: {model}", f"{score:.4f}",
                        help="Mean squared error of the predictions; lower is better")
         diagonal = (alt.Chart(pd.DataFrame({"x": [0, 1], "y": [0, 1]}))
