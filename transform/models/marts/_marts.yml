@@ -1,0 +1,137 @@
+version: 2
+
+models:
+  - name: dim_teams
+    description: Current attributes for each team.
+    columns:
+      - name: team_id
+        data_tests: [unique, not_null]
+      - name: team_tricode
+        data_tests: [not_null]
+
+  - name: dim_players
+    description: One row per player with latest name, team and appearance span.
+    columns:
+      - name: player_id
+        data_tests: [unique, not_null]
+
+  - name: fct_player_games
+    description: Player box-score facts with true shooting %, eFG % and Game Score. Incremental.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, player_id]}}
+    columns:
+      - name: player_id
+        data_tests:
+          - relationships: {arguments: {to: ref('dim_players'), field: player_id}}
+      - name: team_id
+        data_tests:
+          - relationships: {arguments: {to: ref('dim_teams'), field: team_id}}
+      - name: true_shooting_pct
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1.5}}
+
+  - name: fct_team_games
+    description: One row per team per game with result and margin.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, team_id]}}
+
+  - name: mart_team_standings
+    description: Season standings with splits, last 10 and current streak.
+    data_tests:
+      - unique_combination: {arguments: {columns: [season, team_id]}}
+    columns:
+      - name: win_pct
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1}}
+
+  - name: mart_player_season_averages
+    description: Per-player season averages, shooting from totals.
+    data_tests:
+      - unique_combination: {arguments: {columns: [season, player_id]}}
+
+  - name: mart_player_shot_profile
+    description: Shot attempts, makes and FG% by distance zone.
+    data_tests:
+      - unique_combination: {arguments: {columns: [season, player_id, zone]}}
+
+  - name: fct_player_team_stints
+    description: Player team stints (trades/signings) reconstructed from rosters (gaps-and-islands).
+    data_tests:
+      - unique_combination: {arguments: {columns: [player_id, stint_number]}}
+    columns:
+      - name: games_on_roster
+        data_tests:
+          - between: {arguments: {min_value: 1, max_value: 100}}
+
+  - name: mart_player_rolling_form
+    description: Rolling 5/10-game averages and form vs. season-to-date.
+    data_tests:
+      - unique_combination: {arguments: {columns: [player_id, game_id]}}
+    columns:
+      - name: games_in_last5
+        data_tests:
+          - between: {arguments: {min_value: 1, max_value: 5}}
+
+  - name: mart_win_probability_calibration
+    description: Calibration (predicted vs. actual home-win rate per probability bucket) and Brier score, ESPN vs. naive baseline.
+    data_tests:
+      - unique_combination: {arguments: {columns: [model, prob_bucket]}}
+    columns:
+      - name: avg_predicted
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1}}
+      - name: model_brier_score
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1}}
+
+unit_tests:
+  - name: advanced_metrics_are_computed_correctly
+    description: True shooting %, eFG %, Game Score and double-doubles; DNPs are excluded.
+    model: fct_player_games
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: ref('stg_nba__games')
+        rows:
+          - {game_id: "G1", season: "2026-27", game_date_et: "2026-10-21", ingested_at: "2026-10-22 10:00:00+00"}
+      - input: ref('stg_nba__player_games')
+        rows:
+          - {game_id: "G1", player_id: 1, team_id: 10, opponent_team_id: 20, is_home: true, is_starter: true,
+             played: true, minutes: 36.0, points: 30, rebounds: 10, offensive_rebounds: 2, defensive_rebounds: 8,
+             assists: 5, steals: 2, blocks: 1, turnovers: 3, personal_fouls: 2,
+             fgm: 11, fga: 20, fg3m: 3, fg3a: 8, ftm: 5, fta: 6, plus_minus: 8.0}
+          - {game_id: "G1", player_id: 2, team_id: 10, opponent_team_id: 20, is_home: true, is_starter: false,
+             played: true, minutes: 20.0, points: 12, rebounds: 4, offensive_rebounds: 1, defensive_rebounds: 3,
+             assists: 2, steals: 0, blocks: 0, turnovers: 1, personal_fouls: 1,
+             fgm: 5, fga: 10, fg3m: 0, fg3a: 2, ftm: 2, fta: 2, plus_minus: -2.0}
+          - {game_id: "G1", player_id: 3, team_id: 10, opponent_team_id: 20, is_home: true, is_starter: false,
+             played: false, minutes: 0.0, points: 0, rebounds: 0, offensive_rebounds: 0, defensive_rebounds: 0,
+             assists: 0, steals: 0, blocks: 0, turnovers: 0, personal_fouls: 0,
+             fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0, plus_minus: 0.0}
+    expect:
+      rows:
+        - {player_id: 1, true_shooting_pct: 0.6625, effective_fg_pct: 0.625, game_score: 26.2, is_double_double: true}
+        - {player_id: 2, true_shooting_pct: 0.5515, effective_fg_pct: 0.5, game_score: 8.6, is_double_double: false}
+
+  - name: trades_split_stints
+    description: A player traded A -> B -> back to A has three stints; only the last is current.
+    model: fct_player_team_stints
+    given:
+      - input: ref('stg_nba__games')
+        rows:
+          - {game_id: "G1", season: "2026-27", game_date_et: "2026-10-21", game_time_utc: "2026-10-21 23:00:00+00"}
+          - {game_id: "G2", season: "2026-27", game_date_et: "2026-10-23", game_time_utc: "2026-10-23 23:00:00+00"}
+          - {game_id: "G3", season: "2026-27", game_date_et: "2026-10-25", game_time_utc: "2026-10-25 23:00:00+00"}
+          - {game_id: "G4", season: "2026-27", game_date_et: "2026-10-27", game_time_utc: "2026-10-27 23:00:00+00"}
+      - input: ref('stg_nba__player_games')
+        rows:
+          - {game_id: "G1", player_id: 7, team_id: 100}
+          - {game_id: "G2", player_id: 7, team_id: 100}
+          - {game_id: "G3", player_id: 7, team_id: 200}
+          - {game_id: "G4", player_id: 7, team_id: 100}
+    expect:
+      rows:
+        - {player_id: 7, stint_number: 1, team_id: 100, start_date: "2026-10-21", end_date: "2026-10-23", games_on_roster: 2, is_current: false}
+        - {player_id: 7, stint_number: 2, team_id: 200, start_date: "2026-10-25", end_date: "2026-10-25", games_on_roster: 1, is_current: false}
+        - {player_id: 7, stint_number: 3, team_id: 100, start_date: "2026-10-27", end_date: "2026-10-27", games_on_roster: 1, is_current: true}

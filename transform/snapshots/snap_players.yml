@@ -1,0 +1,13 @@
+version: 2
+
+# SCD Type 2 history of player attributes, captured on every `dbt build` (i.e. daily via Airflow).
+# Complements fct_player_team_stints: the snapshot records *when the warehouse observed* a change,
+# and the stints model reconstructs history from game data.
+snapshots:
+  - name: snap_players
+    relation: ref('dim_players')
+    config:
+      schema: snapshots
+      unique_key: player_id
+      strategy: check
+      check_cols: [player_name, latest_position, current_team_id]

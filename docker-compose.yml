@@ -1,0 +1,45 @@
+# Local Airflow for development: `make airflow-up`, then open http://localhost:8080
+# Uses `airflow standalone` (scheduler + API server + DAG processor + SQLite metadata DB in one
+# container). Fine for a single-developer portfolio setup; production would use Postgres + a
+# CeleryExecutor or KubernetesExecutor.
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: standalone
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/nba/orchestration/dags
+      NBA_PROJECT_DIR: /opt/nba
+      NBA_DATA_DIR: /opt/nba/data
+      NBA_WAREHOUSE_PATH: /opt/nba/warehouse/nba.duckdb
+      NBA_SEASON_START_YEAR: "2026"
+      NBA_ALERT_WEBHOOK_URL: ${NBA_ALERT_WEBHOOK_URL:-}
+    volumes:
+      - ./src:/opt/nba/src
+      - ./transform:/opt/nba/transform
+      - ./orchestration:/opt/nba/orchestration
+      - ./data:/opt/nba/data
+      - ./warehouse:/opt/nba/warehouse
+      - airflow-home:/opt/airflow
+
+  # Week 5: Kafka-compatible broker for live games. Start with:
+  #   docker compose --profile streaming up -d redpanda
+  redpanda:
+    profiles: ["streaming"]
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092"
+
+volumes:
+  airflow-home:

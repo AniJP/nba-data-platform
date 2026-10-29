@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: stg_nba__summary_payloads
+    description: Raw ESPN game summaries read once from bronze; the source for every staging model.
+    columns:
+      - name: source_file
+        data_tests: [unique, not_null]
+
+  - name: stg_nba__games
+    description: One row per final game.
+    columns:
+      - name: game_id
+        data_tests: [unique, not_null]
+      - name: game_status
+        description: Only final games (status 3) are ingested.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [3]
+      - name: season_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [regular, postseason, play-in]
+      - name: game_time_utc
+        data_tests: [not_null]
+      - name: home_team_id
+        data_tests: [not_null]
+      - name: away_team_id
+        data_tests: [not_null]
+      - name: home_score
+        data_tests:
+          - between: {arguments: {min_value: 40, max_value: 200}}
+
+  - name: stg_nba__team_games
+    description: One row per team per game.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, team_id]}}
+    columns:
+      - name: team_id
+        data_tests: [not_null]
+      - name: team_tricode
+        data_tests: [not_null]
+      - name: points
+        data_tests: [not_null, non_negative]
+
+  - name: stg_nba__player_games
+    description: One row per player per game, including DNPs.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, player_id]}}
+    columns:
+      - name: player_id
+        data_tests: [not_null]
+      - name: minutes
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 70}}
+      - name: points
+        data_tests: [non_negative]
+
+  - name: stg_nba__pbp_actions
+    description: One row per play-by-play event.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, action_id]}}
+    columns:
+      - name: period
+        data_tests:
+          - not_null
+          - between: {arguments: {min_value: 1, max_value: 10}}
+      - name: seconds_remaining_in_period
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 720}}
+
+  - name: stg_nba__win_probability
+    description: ESPN's home-win probability after each play.
+    data_tests:
+      - unique_combination: {arguments: {columns: [game_id, action_id]}}
+    columns:
+      - name: espn_home_win_prob
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1}}

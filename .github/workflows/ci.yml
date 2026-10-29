@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint, unit tests, dbt build on sample data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,transform,streaming,dashboard]"
+
+      - name: Lint
+        run: ruff check src tests orchestration streaming dashboard
+
+      - name: Unit tests
+        run: pytest --cov=nba_pipeline --cov-report=term-missing
+
+      # The NBA CDN blocks cloud IPs, so CI builds the warehouse from deterministic sample data
+      # that follows the same schema. This proves every model compiles, runs and passes its tests.
+      - name: Seed sample bronze data
+        run: nba-pipeline-sample --data-dir data --games 24
+
+      - name: dbt build (models + data tests)
+        working-directory: transform
+        env:
+          NBA_DATA_DIR: ../data
+          NBA_WAREHOUSE_PATH: ../warehouse/ci.duckdb
+        run: |
+          mkdir -p ../warehouse
+          dbt build --profiles-dir . --target dev
+
+      - name: dbt build again (incremental run must be idempotent)
+        working-directory: transform
+        env:
+          NBA_DATA_DIR: ../data
+          NBA_WAREHOUSE_PATH: ../warehouse/ci.duckdb
+        run: dbt build --profiles-dir . --target dev
+
+      - name: Dashboard renders against the built warehouse
+        env:
+          NBA_WAREHOUSE_PATH: warehouse/ci.duckdb
+        run: |
+          python - <<'PY'
+          from streamlit.testing.v1 import AppTest
+          at = AppTest.from_file("dashboard/app.py", default_timeout=60).run()
+          assert not at.exception, at.exception
+          print("dashboard OK")
+          PY
+
+  dag-check:
+    name: Airflow DAG parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Airflow (own job, since its pinned deps conflict with dbt's)
+        run: |
+          pip install "apache-airflow==3.3.1" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.12.txt"
+          pip install --no-deps -e .
+      - name: Import the DAG
+        run: |
+          python - <<'PY'
+          import runpy
+          dag = runpy.run_path("orchestration/dags/nba_daily_pipeline.py")["dag"]
+          assert dag.dag_id == "nba_daily_pipeline"
+          print("DAG OK:", sorted(dag.task_ids))
+          PY

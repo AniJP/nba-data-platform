@@ -1,0 +1,28 @@
+name: nba
+version: "0.1.0"
+config-version: 2
+profile: nba
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+snapshot-paths: ["snapshots"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  nba:
+    staging:
+      +schema: staging
+      +materialized: table   # staging reads gzipped JSON once, downstream models read tables
+    marts:
+      +schema: marts
+      +materialized: table
+    ops:
+      +schema: ops
+      +materialized: table
+
+tests:
+  nba:
+    +severity: error

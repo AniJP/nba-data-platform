@@ -1,0 +1,22 @@
+nba:
+  target: "{{ env_var('NBA_DBT_TARGET', 'dev') }}"
+  outputs:
+    # Local DuckDB file
+    dev:
+      type: duckdb
+      path: "{{ env_var('NBA_WAREHOUSE_PATH', '../warehouse/nba.duckdb') }}"
+      threads: 4
+      settings:
+        memory_limit: "{{ env_var('NBA_DUCKDB_MEMORY_LIMIT', '2GB') }}"   # stay well inside a laptop's RAM
+        preserve_insertion_order: false                                  # lets DuckDB stream large reads
+
+    # MotherDuck (serverless DuckDB in the cloud). Needs MOTHERDUCK_TOKEN in the environment.
+    # Bronze can stay local or live in S3: set NBA_DATA_DIR=s3://<bucket>/nba and AWS credentials.
+    motherduck:
+      type: duckdb
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'nba') }}"
+      threads: 8
+      extensions: [httpfs]
+      secrets:
+        - type: s3
+          provider: credential_chain

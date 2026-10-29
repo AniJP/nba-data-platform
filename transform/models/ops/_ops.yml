@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: ops
+    description: Append-only JSON-lines run log written by every ingestion job.
+    tables:
+      - name: run_log
+        meta:
+          external_location: >-
+            read_json('{{ env_var("NBA_DATA_DIR", "../data") }}/_state/run_log.jsonl',
+                      format = 'newline_delimited', union_by_name = true)
+
+models:
+  - name: stg_ops__pipeline_runs
+    description: One row per ingestion job run, deduplicated by run_id.
+    columns:
+      - name: run_id
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - accepted_values: {arguments: {values: [success, failed, running]}}
+      - name: duration_s
+        data_tests: [non_negative]
+
+  - name: mart_pipeline_health
+    description: Daily pipeline health per job; success rate, volume, latency, failures.
+    data_tests:
+      - unique_combination: {arguments: {columns: [run_date, job]}}
+    columns:
+      - name: success_rate
+        data_tests:
+          - between: {arguments: {min_value: 0, max_value: 1}}

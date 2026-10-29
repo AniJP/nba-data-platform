@@ -1,0 +1,12 @@
+version: 2
+
+seeds:
+  - name: espn_team_abbreviations
+    description: Maps ESPN team abbreviations (GS, NY, UTAH, ...) to official NBA tricodes (GSW, NYK, UTA, ...).
+    config:
+      schema: reference
+    columns:
+      - name: espn_abbreviation
+        data_tests: [unique, not_null]
+      - name: nba_tricode
+        data_tests: [unique, not_null]

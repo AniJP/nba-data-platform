@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Raw ESPN game summaries landed by the `nba_pipeline` ingestion package as gzipped JSON
+      envelopes ({_meta, payload}), Hive-partitioned by season. DuckDB reads them in place.
+    meta:
+      # dbt-duckdb external source: {name} is replaced with each table's name below.
+      # Memory notes (DuckDB reserves ~2x maximum_object_size per open file):
+      # * union_by_name = false: the schema is inferred from a sample of files and the rest are
+      #   streamed. With true, DuckDB opens *every* file at bind time, so memory grows with game count.
+      # * Each raw source is read by exactly one model (stg_nba__summary_payloads); everything
+      #   downstream reads that table, never the JSON.
+      # * 16 MB max object: a trimmed game summary is ~250 KB.
+      external_location: >-
+        read_json('{{ env_var("NBA_DATA_DIR", "../data") }}/bronze/{name}/season=*/*.json.gz',
+                  format = 'auto', union_by_name = false, hive_partitioning = true,
+                  filename = true, maximum_object_size = 16777216)
+    freshness:
+      warn_after: {count: 36, period: hour}
+    loaded_at_field: "cast(_meta.ingested_at as timestamp)"
+    tables:
+      - name: summary
+        description: One file per final game (ESPN summary, trimmed to header, box score, plays, win probability).

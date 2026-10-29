@@ -1,0 +1,25 @@
+# local data & warehouse (re-creatable from the pipeline)
+data/
+warehouse/
+*.duckdb
+*.duckdb.wal
+
+# dbt
+transform/target/
+transform/logs/
+transform/dbt_packages/
+transform/.user.yml
+
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.coverage
+.ruff_cache/
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
+samples/
